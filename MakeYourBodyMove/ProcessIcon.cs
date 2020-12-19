@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Diagnostics;
 using System.Globalization;
+using System.Linq;
 using System.Threading;
 using System.Windows.Forms;
 
@@ -8,99 +9,140 @@ namespace MakeYourBodyMove
 {
     internal class ProcessIcon : IDisposable
     {
-        private readonly static int RefreshTimerInterval = 100;
-        private readonly static int InactiveTimeout = 180000;
+        private string ProcessName { get => ConfigData.ProcessName; }
+        private string MainWindowTitle { get => ConfigData.MainWindowTitle; }
+        private int CheckInterval { get => ConfigData.CheckInterval; }
+        private int StaledTimeout { get => ConfigData.StaledTimeout * 60 * 1000; }
+        private int InactivityTimeout { get => ConfigData.InactivityTimeout; }
+
 
         protected NotifyIcon NotifyIcon { get; set; }
         private HandyTimer.Timer RefreshTimer { get; set; }
 
-        protected CultureInfo ControlCulture;
-
         private Win32.POINT PreviousCursorPostion;
         private DateTime PreviousDateTime;
 
-        private bool running = false;
-        public bool Running
+        private ActivationState CurrentState = ActivationState.Deactivated;
+        public ActivationState Running
         {
-            get { return running; }
+            get { return CurrentState; }
             set
             {
-                if (value)
+                if (value == ActivationState.Activated)
                 {
                     NotifyIcon.Icon = Properties.Resources.activated;
+                    RefreshTimer.StartSingle(0);
+                    CurrentState = ActivationState.Activated;
+                }
+                else if (value == ActivationState.Inactivated)
+                {
+                    NotifyIcon.Icon = Properties.Resources.inactivated;
                     RefreshTimer.StartSingle(0);
                 }
                 else
                 {
                     NotifyIcon.Icon = Properties.Resources.deactivated;
                     RefreshTimer.Stop();
+                    CurrentState = ActivationState.Deactivated;
                 }
-                running = value;
             }
         }
 
         public ProcessIcon()
         {
-            ControlCulture = Thread.CurrentThread.CurrentUICulture;
-
             NotifyIcon = new NotifyIcon();
             NotifyIcon.Visible = true;
             NotifyIcon.Icon = Properties.Resources.activated;
             NotifyIcon.ContextMenuStrip = new ContextMenu(this);
-            //NotifyIcon.DoubleClick += NotifyIcon_DoubleClick;
+            NotifyIcon.DoubleClick += NotifyIcon_DoubleClick;
 
             RefreshTimer = new HandyTimer.Timer(RefreshStatus);
-            Running = true;
+            CurrentState = ActivationState.Activated;
             RefreshTimer.StartSingle(0);
+        }
+
+        private bool HasProcessWithTitle(string process_name, string window_title)
+        {
+            if (string.IsNullOrWhiteSpace(process_name))
+            {
+                return true;
+            }
+            var processes = Process.GetProcessesByName(process_name);
+            return processes.Any(p => p.MainWindowTitle == window_title);
         }
 
         private void NotifyIcon_DoubleClick(object sender, EventArgs e)
         {
-            //using (var dlg = new Configuration())
-            //{
-            //    dlg.ShowDialog();
-            //}
+            using (var dlg = new Config())
+            {
+                dlg.ShowDialog();
+            }
         }
 
         protected void RefreshStatus(object state)
         {
-            if (!Running)
+            if (CurrentState == ActivationState.Deactivated)
             {
                 NotifyIcon.Icon = Properties.Resources.deactivated;
                 return;
             }
 
-            try
+            if (CurrentState == ActivationState.Activated)
+            {
+                try
+                {
+                    // Just to be safe. But probably not necessary nor performant
+                    NotifyIcon.Icon = Properties.Resources.activated;
+
+                    if (PreviousDateTime.AddMilliseconds(InactivityTimeout) < DateTime.Now)
+                    {
+                        if (!HasProcessWithTitle(ProcessName, MainWindowTitle))
+                        {
+                            CurrentState = ActivationState.Inactivated;
+                            return;
+                        }
+                    }
+
+                    Win32.POINT p;
+                    Win32.GetCursorPos(out p);
+                    //Debug.Print("CursorPos: " + p.x.ToString() + ":" + p.y.ToString());
+                    if (PreviousCursorPostion != p)
+                    {
+                        PreviousCursorPostion = p;
+                        PreviousDateTime = DateTime.Now;
+                        return;
+                    }
+
+                    if (PreviousDateTime.AddMilliseconds(StaledTimeout) < DateTime.Now)
+                    {
+                        Win32.SetCursorPos(p.x + 50, p.y + 50);
+                        Thread.Sleep(50);
+                        Win32.SetCursorPos(p.x - 50, p.y - 50);
+                        Thread.Sleep(50);
+                        Win32.SetCursorPos(p.x, p.y);
+                        PreviousDateTime = DateTime.Now;
+                        //Debug.Print("Moving body");
+                    }
+                }
+                finally
+                {
+                    RefreshTimer.StartSingle(CheckInterval);
+                }
+                return;
+            }
+
+            if (CurrentState == ActivationState.Inactivated)
             {
                 // Just to be safe. But probably not necessary nor performant
-                NotifyIcon.Icon = Properties.Resources.activated;
+                NotifyIcon.Icon = Properties.Resources.inactivated;
 
-                Win32.POINT p;
-                Win32.GetCursorPos(out p);
-
-                Debug.Print("CursorPos: " + p.x.ToString() + ":" + p.y.ToString());
-
-                if (PreviousCursorPostion != p)
+                if (HasProcessWithTitle(ProcessName, MainWindowTitle))
                 {
-                    PreviousCursorPostion = p;
-                    PreviousDateTime = DateTime.Now;
+                    CurrentState = ActivationState.Activated;
+                    RefreshStatus(null);
                     return;
                 }
-
-                if (PreviousDateTime.AddMilliseconds(InactiveTimeout) < DateTime.Now)
-                {
-                    Win32.SetCursorPos(p.x + 50, p.y + 50);
-                    Thread.Sleep(50);
-                    Win32.SetCursorPos(p.x - 50, p.y - 50);
-                    Thread.Sleep(50);
-                    Win32.SetCursorPos(p.x, p.y);
-                    PreviousDateTime = DateTime.Now;
-                    Debug.Print("Moving body");
-                }
-            }
-            finally
-            {
-                RefreshTimer.StartSingle(RefreshTimerInterval);
+                RefreshTimer.StartSingle(InactivityTimeout);
             }
         }
 
