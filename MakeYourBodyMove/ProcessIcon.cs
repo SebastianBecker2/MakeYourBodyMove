@@ -13,7 +13,7 @@ namespace MakeYourBodyMove
         private string MainWindowTitle { get => ConfigData.MainWindowTitle; }
         private int CheckInterval { get => ConfigData.CheckInterval; }
         private int StaledTimeout { get => ConfigData.StaledTimeout * 60 * 1000; }
-        private int InactivityTimeout { get => ConfigData.InactivityTimeout; }
+        private int InactivityTimeout { get => ConfigData.InactivityTimeout * 60 * 1000; }
 
 
         protected NotifyIcon NotifyIcon { get; set; }
