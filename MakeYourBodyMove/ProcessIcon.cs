@@ -68,7 +68,7 @@ namespace MakeYourBodyMove
                 return true;
             }
             var processes = Process.GetProcessesByName(process_name);
-            return processes.Any(p => p.MainWindowTitle == window_title);
+            return processes.Any(p => p.MainWindowTitle.StartsWith(window_title));
         }
 
         private void NotifyIcon_DoubleClick(object sender, EventArgs e)

@@ -48,7 +48,7 @@ namespace MakeYourBodyMove
                 if (!string.IsNullOrWhiteSpace(TxtMainWindowTitle.Text))
                 {
                     TxtExplanation.Text += 
-                        $" and a main window title [{TxtMainWindowTitle.Text}]";
+                        $" and a main window title that starts with [{TxtMainWindowTitle.Text}]";
                 }
                 TxtExplanation.Text += 
                     $" exists.{ Environment.NewLine}" +
